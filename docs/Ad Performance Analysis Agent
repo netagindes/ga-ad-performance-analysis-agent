@@ -1,0 +1,137 @@
+# Ad Performance Analysis Agent
+
+
+
+## Objective
+Design and implement a system involving a Model Context Protocol (MCP) and an Agent to analyze ad performance data from a public BigQuery dataset.
+
+
+
+## Tools and Data
+- **Data Source:** Google BigQuery public dataset: 
+
+	`bigquery-public-data.google_analytics_sample.ga_sessions_*`
+  
+  will be used as a proxy for web/app session and ad interaction data.
+
+- **Google account:** My personal google account ⁉️
+
+- **Programing Language:** Python
+
+- **Environment:** Local environment
+
+
+
+## The Task
+
+The assignment is divided into the following parts: 
+- Data Preparation
+- Building the Model Context Protocol (MCP)
+- Building an agent
+- Create a Streamlit Dashboard
+
+Before you begin, use a google account to create a project in GCP (i used my personal account ⁉️).
+
+
+### Part 1 - Data Preparation and Exploration
+
+#### **1 .** Connect to the specified public BigQuery dataset
+    `bigquery-public-data.google_analytics_sample.ga_sessions_*.`
+
+#### **2 .** Explore the data
+Use this [documentation](https://support.google.com/analytics/answer/3437719?hl=en) to explore the data. 
+
+
+**Usefull queries syntext:** (change it to suit your implementation)
+
+* To access the date of the table:
+  ```sql
+    SELECT DISTINCT PARSE_DATE('%Y%m%d', _TABLE_SUFFIX) AS session_date
+    FROM `bigquery-public-data.google_analytics_sample.ga_sessions_*`
+  ```
+  *Note:* this query includes all the tables in the dataset, each table in the dataset represents a single date. 
+
+* To access specific month:
+  ```sql
+    FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201707*`
+  ```
+
+#### **3 .** Download all the data in a monthly granularity
+```sql
+SELECT
+	-- Grouping Dimensions
+	trafficSource.source AS traffic_source,
+	geoNetwork.country AS user_country,
+	trafficSource.medium AS medium,
+	device.deviceCategory AS device_type,
+	hits.page.pageTitle AS page_title,
+	-- Key Metrics Aggregation
+	COUNT(DISTINCT fullVisitorId) AS total_visitors,
+	SUM(CASE WHEN hits.type = 'PAGE' THEN 1 ELSE 0 END) AS total_pageviews,
+	AVG(totals.timeOnSite) AS avg_time_on_site_seconds,
+	SUM(CASE WHEN totals.transactions >= 1 THEN 1 ELSE 0 END) AS total_conversions
+
+FROM
+	`bigquery-public-data.google_analytics_sample.ga_sessions_*`,
+	UNNEST(hits) AS hits -- Unnest the hits array to analyze page-level data
+
+WHERE
+	trafficSource.source IS NOT NULL
+	AND trafficSource.medium IS NOT NULL
+	AND totals.visits >= 1 -- Filter out non-meaningful sessions
+
+GROUP BY
+	traffic_source,
+	medium,
+	device_type,
+	user_country,
+	page_title
+
+HAVING
+	total_pageviews >= 20 -- Ensure enough volume per page/channel combo
+```
+
+*Note:* This query includes all the possible dimensions and KPIs that a user can request in part 3 of the assignment.
+
+
+### Part 2 - Building the MCP Server
+Create an MCP Server in Python that exposes a "tool" (a function) to AI Clients. 
+
+**Tools:**
+1. `get_monthly_data`: This tool should accept a month and a set of requested dimension columns and return a structured JSON response containing the calculated KPIs for these dimensions on this month (as described in the query above).
+
+2. `get_all_data`: This tool should accept a set of requested dimension columns and return a structured JSON response containing the calculated KPIs for these dimensions on all the data.
+
+
+### Part 3 - Building the Agent
+Build an AI Agent that interacts with the MCP created in Part 2 (MCP Server  ──▶  Agent / LLM). 
+
+**Flagging Rules:**
+* *Traﬃc rule:* Avg. time on site < 120 seconds and total pageviews below 30
+
+* *Conversion rule:* zero conversions and more than 250 pageviews
+
+**Agent Abilities:**
+
+1. *Compare between two months* - KPIs changes for all of the dimensions requested by the user. Provide for each segment the percentage change in each KPI.
+
+2. *Identify flagged segments* - Given all the dimensions except user country, and a rule name (traﬃc or conversion) return all the flagged segments.
+
+3. *Calculate the conversion rate (total conversions / total visitors)* - for each user country on each device on a given month, ordered from highest to lowest.
+
+
+### Part 4 - Building the Client Interaction
+Build an AI Agent application that interacts with the MCP created in Part 2 (Client App  ──▶  MCP Server). 
+
+* Streamlit dashboard
+
+
+
+## Deliverables
+
+**Submit the following:**
+- Python project containing the code and documentation.
+
+- A brief write-up (1-2 pages) explaining:
+	- The architecture of your agent and MCP.
+	- Any challenges you had working on this assignment.

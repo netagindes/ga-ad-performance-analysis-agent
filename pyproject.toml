@@ -1,0 +1,32 @@
+[project]
+name = "ga-ad-performance-analysis-agent"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "netagindes",email = "neta.gindes@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv (>=1.0.1,<2.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "streamlit (>=1.32.0,<2.0.0)",
+    "google-cloud-bigquery (>=3.39.0,<4.0.0)",
+    "mcp (>=1.25.0,<2.0.0)",
+    "google (>=3.0.0,<4.0.0)"
+]
+
+[project.scripts]
+config-check = "src.config:main"
+mcp-server = "src.ga_ad_agent.ga_mcp_server:main"
+ga-ad-agent = "src.ga_ad_agent.agent_app:main"
+
+[tool.poetry]
+packages = [
+    {include = "ga_ad_agent", from = "src"},
+    {include = "src"}
+    ]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
