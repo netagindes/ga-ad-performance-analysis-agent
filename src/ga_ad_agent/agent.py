@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Literal, Tuple
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from constants import DEFAULT_PROJECT  # noqa: F401
+from constants import DEFAULT_PROJECT
 
 RuleName = Literal["traffic", "conversion"]
 
@@ -335,11 +335,12 @@ agent = Agent(
     You can do exactly these actions (choose one):
     1) compare_two_months: Compare KPIs between two months for requested dimensions and report % changes.
     2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic|conversion), return flagged segments.
-    3) conversion_rate_by_country_and_device: For a month, return conversion rate per (user_country, device_type), ordered high->low.
+    3) conversion_rate_by_country_and_device: For a timeframe, return conversion rate per (user_country, device_type), ordered high->low. Use a month when specified, or use "all_data" when the user asks for all history—do not force a month.
+       conversion rate = (total_conversions / total_visitors) for the given timeframe
 
     When selecting dimensions, only use these known fields:
     traffic_source, medium, device_type, user_country, page_title.
-    Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses.
+    Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. If the user wants all history, keep the literal value "all_data".
     Return JSON only with keys: action, arguments.
     """,
     model=DEFAULT_GENAI_MODEL,  # Set GENAI_MODEL env to override.

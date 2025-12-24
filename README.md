@@ -6,6 +6,12 @@
 [1] Make sure you add the following to your environment (you can use the attached .env file):
     - OPENAI_API_KEY
     - GOOGLE_CLOUD_PROJECT_ID
+```bash
+  export GOOGLE_CLOUD_PROJECT='ad-performance-analysis-agent'
+  export GEMINI_API_KEY='ADD_YOUR_GEMINI_API_KEY'
+  export GOOGLE_API_KEY='ADD_YOUR_GOOGLE_API_KEY'
+
+```
 [Optional] Run configuration check by running the config file.
 
 [2] Connect to your GCP account:
@@ -100,65 +106,6 @@ If you want access to my GCP project, please contact me.
 
 - Enrich the agent input channeling other fields from the GA Sample data.
 
-
-### Part 2 - Building the MCP Server
-
-#### Tools
-1. `get_monthly_data`: This tool should accept a month and a set of requested dimension columns and return a structured **JSON response** containing the calculated KPIs for these dimensions on this month (as described in the query above).
-
-2. `get_all_data`: This tool should accept a set of requested dimension columns and return a structured **JSON response** containing the calculated KPIs for these dimensions on all the data.
-
-
-### Part 3 - Building the Agent
-
-#### Flagging Rules:
-
-* **Traffic rule:** Avg. time on site < 120 seconds and total pageviews below 30
-* **Conversion rule:** zero conversions and more than 250 pageviews
-
-#### Agent Abilities:
-
-1. *Compare between two months* what were the changes to the KPIs for all the dimensions requested by the user. Provide for each segment the percentage change in each KPI.
-
-2. Given all the dimensions except user country, and a rule name (traffic or conversion) return all the *flagged segments*.
-
-3. Return the *conversion rate* (total conversions / total visitors) for each user country on each device on a given month, ordered from highest to lowest.
-
-
-### Part 4 - Building the Client Interaction
-Build an AI Agent application that interacts with the MCP created in Part 2.
-
-* Streamlit
-* Dashboard
-
-
-**Personal GCP Project**
-```
-    Name: "Ad Performance Analysis Agent"
-    ID: "ad-performance-analysis-agent"
-```
-**Repo URL**
-## Input Dataset
-
-`bigquery-public-data.google_analytics_sample.ga_sessions_*`
-
-* Public BigQuery dataset.
-
-* The format and schema of the Google Analytics data that is imported into BigQuery - [Documentation](https://support.google.com/analytics/answer/3437719?hl=en)
-
-
-[**Google Analytics Sample**](https://console.cloud.google.com/marketplace/product/obfuscated-ga360-data/obfuscated-ga360-data) - Twelve months (August 2016 to August 2017) of obfuscated Google Analytics 360 data from the [Google Merchandise Store](https://merch.google/)
-
-### Part 1 - Data Preparation and Exploration
-
-**Monthly data querying:**
-
-Direct extraction from the BigQuery public data
-
-
-- [Bigquery Query](https://console.cloud.google.com/bigquery?ws=!1m7!1m6!12m5!1m3!1sad-performance-analysis-agent!2sus-central1!3s36bf4fb0-e3dd-4f2e-9d4e-4915ba6a40c4!2e1)
-
-- Bigquery Table ID: `ad-performance-analysis-agent.ga_sessions_data.data`
 
 ### Part 2 - Building the MCP Server
 

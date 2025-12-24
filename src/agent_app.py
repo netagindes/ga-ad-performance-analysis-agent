@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-
-# Load environment (.env) early so GOOGLE_API_KEY / Vertex AI settings are visible to ADK.
-import config  # noqa: F401
+import os
+from config import main as config
 
 from constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
 from ga_ad_agent.agent import (
@@ -11,6 +10,7 @@ from ga_ad_agent.agent import (
     flagged_segments,
     run_adk_agent,
 )
+
 
 st.set_page_config(page_title="GA Agent", layout="wide")
 st.title("GA Agent (ADK + MCP)")

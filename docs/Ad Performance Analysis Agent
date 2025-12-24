@@ -46,7 +46,7 @@ Design and implement a system involving a Model Context Protocol (MCP) and an Ag
 
 - **Google account:** My personal google account ⁉️
 
-- **Programing Language:** Python
+- **Programming Language:** Python
 
 - **Environment:** Local environment
 
@@ -72,7 +72,7 @@ Before you begin, use a google account to create a project in GCP (i used my per
 Use this [documentation](https://support.google.com/analytics/answer/3437719?hl=en) to explore the data. 
 
 
-**Usefull queries syntext:** (change it to suit your implementation)
+**Useful queries syntax:** (change it to suit your implementation)
 
 * To access the date of the table:
   ```sql
