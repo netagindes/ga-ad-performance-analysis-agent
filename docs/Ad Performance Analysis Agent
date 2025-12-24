@@ -1,6 +1,36 @@
 # Ad Performance Analysis Agent
 
-
+┌─----───────────┐
+│ User (part 4)  │
+│    Dashboard   │
+└─────┬----──────┘
+      │ structured query
+      ▼
+┌──────────────────────┐
+│   Agent (Part 3)     │
+│  - Reasoning         │
+│  - Business rules    │
+│  - KPI logic         │
+└─────┬────────────────┘
+      │ calls tool via adapter
+      ▼
+┌──────────────────────┐
+│     mcp_client       │
+│  (Client Adapter)    │
+└─────┬────────────────┘
+      │ MCP tool request
+      ▼
+┌──────────────────────┐
+│  MCP Server (Part 2) │
+│  - get_monthly_data  │
+│  - get_all_data      │
+└─────┬────────────────┘
+      │ SQL execution
+      ▼
+┌──────────────────────┐
+│   BigQuery (Part 1)  │
+│ (Public GA Dataset)  │
+└──────────────────────┘
 
 ## Objective
 Design and implement a system involving a Model Context Protocol (MCP) and an Agent to analyze ad performance data from a public BigQuery dataset.

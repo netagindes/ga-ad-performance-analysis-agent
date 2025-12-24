@@ -1,35 +1,6 @@
 # Ad Performance Analysis Agent 
-┌─----───────────┐
-│ User (part 4)  │
-│    Dashboard   │
-└─────┬----──────┘
-      │ structured query
-      ▼
-┌──────────────────────┐
-│   Agent (Part 3)     │
-│  - Reasoning         │
-│  - Business rules    │
-│  - KPI logic         │
-└─────┬────────────────┘
-      │ calls tool via adapter
-      ▼
-┌──────────────────────┐
-│     mcp_client       │
-│  (Client Adapter)    │
-└─────┬────────────────┘
-      │ MCP tool request
-      ▼
-┌──────────────────────┐
-│  MCP Server (Part 2) │
-│  - get_monthly_data  │
-│  - get_all_data      │
-└─────┬────────────────┘
-      │ SQL execution
-      ▼
-┌──────────────────────┐
-│   BigQuery (Part 1)  │
-│ (Public GA Dataset)  │
-└──────────────────────┘
+
+![MCP + ADK Agent Structure](image.png)
 
 ## Step by Step Guide:
 [1] Make sure you add the following to your environment (you can use the attached .env file):
