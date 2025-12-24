@@ -1,9 +1,0 @@
-# Pinned runtime dependencies (exported from poetry.lock)
-python-dotenv==1.2.1
-pandas==2.3.3
-streamlit==1.52.2
-google-cloud-bigquery==3.39.0
-mcp==1.25.0
-
-google~=3.0.0
-dotenv~=0.9.9
