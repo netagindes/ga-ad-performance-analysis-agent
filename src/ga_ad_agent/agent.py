@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import sys
 import time
 import uuid
@@ -13,7 +12,7 @@ from typing import Any, Dict, List, Literal, Tuple
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from constants import DEFAULT_PROJECT
+from constants import DEFAULT_PROJECT  # noqa: F401
 
 RuleName = Literal["traffic", "conversion"]
 
