@@ -10,7 +10,7 @@ import json
 from google.cloud import bigquery
 from mcp.server.fastmcp import FastMCP
 
-from constants import DEFAULT_PROJECT, DATASET, TABLE_WILDCARD, DIMENSIONS, KPI_FIELDS
+from src.ga_ad_agent.constants import DEFAULT_PROJECT, DATASET, TABLE_WILDCARD, DIMENSIONS, KPI_FIELDS
 
 
 # -------------------------

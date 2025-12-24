@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Literal, Tuple
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from constants import DEFAULT_PROJECT
+from src.ga_ad_agent.constants import DEFAULT_PROJECT
 
 RuleName = Literal["traffic", "conversion"]
 

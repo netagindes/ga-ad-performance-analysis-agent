@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
-import os
-from config import main as config
 
-from constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
-from ga_ad_agent.agent import (
+from src.ga_ad_agent.constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
+from src.ga_ad_agent.agent import (
     compare_two_months,
     conversion_rate_by_country_device,
     flagged_segments,

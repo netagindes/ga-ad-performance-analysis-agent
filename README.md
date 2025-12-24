@@ -20,7 +20,12 @@ gcloud auth login
 gcloud auth application-default login
 ```
 
-[3] Run Ad Performance Analysis Agent
+[3] Run MCP server
+```bash
+mcp dev src/ga_ad_agent/ga_mcp_server.py
+```
+
+[4] Run Ad Performance Analysis Agent
 
 If you use your local environment, and run the Streamlit Dashboard with the following command.
 
