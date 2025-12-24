@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Tuple
 
@@ -43,84 +46,6 @@ def _setup_logging() -> None:
 
 
 _setup_logging()
-
-
-# def _tool_result_to_json(result: Any) -> Dict[str, Any]:
-#     """
-#     Universal MCP ToolResult extraction across SDK versions.
-#
-#     Strategy:
-#     1) If it's pydantic, model_dump() it.
-#     2) If it has dict()/to_dict(), use it.
-#     3) Else fallback to __dict__.
-#     Then look for payload in common places.
-#     """
-#     import json
-#
-#     # 1) Convert to a plain python dict (best effort)
-#     dumped = None
-#
-#     if hasattr(result, "model_dump"):
-#         dumped = result.model_dump()  # pydantic v2
-#     elif hasattr(result, "dict"):
-#         dumped = result.dict()  # pydantic v1 style
-#     elif hasattr(result, "to_dict"):
-#         dumped = result.to_dict()
-#     elif hasattr(result, "__dict__"):
-#         dumped = dict(result.__dict__)
-#     else:
-#         dumped = {"repr": repr(result)}
-#
-#     logger.debug("ToolResult dumped keys=%s", sorted(dumped.keys()))
-#
-#     # 2) Look for structured content in multiple known locations
-#     for key in ("structured_content", "structuredContent", "data", "result", "value", "output"):
-#         if key in dumped and dumped[key] is not None:
-#             payload = dumped[key]
-#             if isinstance(payload, dict):
-#                 return payload
-#             # sometimes it's already JSON string
-#             if isinstance(payload, str):
-#                 try:
-#                     return json.loads(payload)
-#                 except Exception:
-#                     return {"raw": payload}
-#             return {"raw": payload}
-#
-#     # 3) Look into content blocks (common schema: {"content":[{"type":"text","text":"..."}]})
-#     content = dumped.get("content") or []
-#     if isinstance(content, list) and content:
-#         # json blocks
-#         for part in content:
-#             if isinstance(part, dict) and part.get("type") == "json":
-#                 payload = part.get("json") or part.get("data")
-#                 if isinstance(payload, dict):
-#                     return payload
-#                 if isinstance(payload, str):
-#                     try:
-#                         return json.loads(payload)
-#                     except Exception:
-#                         return {"raw": payload}
-#
-#         # text blocks
-#         texts = []
-#         for part in content:
-#             if isinstance(part, dict) and part.get("type") == "text":
-#                 texts.append(part.get("text", ""))
-#             else:
-#                 # sometimes it's a class with attrs
-#                 if getattr(part, "type", None) == "text":
-#                     texts.append(getattr(part, "text", ""))
-#
-#         joined = "\n".join([t for t in texts if t]).strip()
-#         if joined:
-#             try:
-#                 return json.loads(joined)
-#             except Exception:
-#                 return {"raw": joined, "isError": dumped.get("isError")}
-#
-#     # 4) Last resort: return the dumped object so we can see what we're missing
-#     return {"tool_result_dump": dumped}
 
 
 def _tool_result_to_json(result: Any) -> Dict[str, Any]:
@@ -202,6 +127,7 @@ def get_all(dimensions: List[str], project_id: str = DEFAULT_PROJECT) -> Dict[st
     return asyncio.run(_call_tool("get_all_data", {"dimensions": dimensions, "project_id": project_id}))
 
 
+# @tool("compare_two_months_tool")
 def compare_two_months(
     month_a: str,
     month_b: str,
@@ -366,3 +292,161 @@ def conversion_rate_by_country_device(
         "row_count": len(out),
         "rows": out,
     }
+
+
+from google.adk.agents import Agent
+from google.adk.runners import InMemoryRunner
+from google.adk.tools.function_tool import FunctionTool
+
+
+def _compare_months_tool(month_a: str, month_b: str, dimensions: list[str], project_id: str = DEFAULT_PROJECT):
+    """Compare KPIs between two months using MCP-backed helper."""
+    res = compare_two_months(month_a, month_b, dimensions, project_id=project_id)
+    return res.get("rows", [])
+
+
+def _flagged_segments_tool(rule: str, project_id: str = DEFAULT_PROJECT):
+    """Return flagged segments based on traffic or conversion rule."""
+    res = flagged_segments(rule, project_id=project_id)
+    return res.get("rows", [])
+
+
+def _conversion_rate_by_country_device_tool(month: str, project_id: str = DEFAULT_PROJECT):
+    """Return conversion rate by country and device."""
+    res = conversion_rate_by_country_device(month, project_id=project_id)
+    return res.get("rows", [])
+
+# Wrap functions as ADK FunctionTool instances
+compare_months_tool = FunctionTool(_compare_months_tool)
+flagged_segments_tool = FunctionTool(_flagged_segments_tool)
+conversion_rate_by_country_device_tool = FunctionTool(_conversion_rate_by_country_device_tool)
+
+# Model selection: allow override via GENAI_MODEL.
+# Use a v1beta-available model by default to avoid 404s on older endpoints.
+DEFAULT_GENAI_MODEL = "gemini-2.0-flash"
+
+agent = Agent(
+    name="ad_performance_agent",
+    description="""
+    You are an Ad Performance Analysis Agent.
+    Use tools when needed.
+    Prefer deterministic results
+    """,
+    instruction="""
+    You can do exactly these actions (choose one):
+    1) compare_two_months: Compare KPIs between two months for requested dimensions and report % changes.
+    2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic|conversion), return flagged segments.
+    3) conversion_rate_by_country_and_device: For a month, return conversion rate per (user_country, device_type), ordered high->low.
+
+    When selecting dimensions, only use these known fields:
+    traffic_source, medium, device_type, user_country, page_title.
+    Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses.
+    Return JSON only with keys: action, arguments.
+    """,
+    model=DEFAULT_GENAI_MODEL,  # Set GENAI_MODEL env to override.
+    tools=[compare_months_tool, flagged_segments_tool, conversion_rate_by_country_device_tool],
+)
+
+
+def _extract_text_from_event(event: Any) -> str | None:
+    """
+    Pull plain text from an ADK event content if present.
+    """
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) if content else None
+    if not parts:
+        return None
+
+    texts = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if text:
+            texts.append(text)
+
+    joined = "\n".join(texts).strip()
+    return joined or None
+
+
+def _parse_agent_json(text: str) -> Dict[str, Any]:
+    """
+    Try to parse JSON from model text. Falls back to {}
+    """
+    if not text:
+        return {}
+
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Heuristic: grab first {...}
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        snippet = text[start : end + 1]
+        try:
+            return json.loads(snippet)
+        except Exception:
+            return {}
+
+    return {}
+
+
+def run_adk_agent(
+    user_message: str,
+    *,
+    user_id: str = "streamlit-user",
+    session_id: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Run the ADK agent once and return parsed action/arguments plus raw text.
+    This is used by the Streamlit UI as the first processing step.
+    """
+
+    # # Basic env guard so we fail fast with a useful error in UI.
+    # has_google_key = bool(os.getenv("GOOGLE_API_KEY"))
+    # has_vertex = bool(os.getenv("GOOGLE_CLOUD_PROJECT")) #and os.getenv("VERTEXAI_LOCATION"))
+    # if not (has_google_key or has_vertex):
+    #     return {
+    #         "error": "Missing credentials: set GOOGLE_API_KEY, or VERTEXAI_PROJECT and VERTEXAI_LOCATION.",
+    #         "raw_text": None,
+    #         "event_count": 0,
+    #     }
+
+    runner = InMemoryRunner(agent=agent, app_name="ad_performance_agent")
+
+    async def _run():
+        events = await runner.run_debug(
+            user_messages=user_message,
+            user_id=user_id,
+            session_id=session_id or f"session-{uuid.uuid4()}",
+            quiet=True,
+            verbose=False,
+        )
+        await runner.close()
+        return events
+
+    try:
+        events = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "error": f"ADK agent failed: {exc}",
+            "model": DEFAULT_GENAI_MODEL,
+            "raw_text": None,
+            "event_count": 0,
+        }
+
+    response_text = None
+    for event in events:
+        response_text = _extract_text_from_event(event) or response_text
+
+    parsed = _parse_agent_json(response_text or "")
+
+    return {
+        "action": parsed.get("action"),
+        "arguments": parsed.get("arguments", {}) if isinstance(parsed, dict) else {},
+        "raw_text": response_text,
+        "event_count": len(events),
+    }
+
+

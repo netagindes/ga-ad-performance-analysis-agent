@@ -1,29 +1,113 @@
 import streamlit as st
 import pandas as pd
 
+# Load environment (.env) early so GOOGLE_API_KEY / Vertex AI settings are visible to ADK.
+import config  # noqa: F401
+
 from constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
 from ga_ad_agent.agent import (
     compare_two_months,
-    flagged_segments,
     conversion_rate_by_country_device,
+    flagged_segments,
+    run_adk_agent,
 )
 
 st.set_page_config(page_title="GA Agent", layout="wide")
-st.title("GA Agent (via MCP)")
+st.title("GA Agent (ADK + MCP)")
+st.caption("Requests go through the ADK agent first, then execute via MCP tools.")
+
+# project_id = st.text_input("Billing Project ID", value=DEFAULT_PROJECT)
+project_id = DEFAULT_PROJECT
+
+
+def _render_compare(r, dimensions):
+    rows = r.get("rows", [])
+    flat = []
+    for row in rows:
+        base = {d: row.get(d) for d in dimensions}
+        pct = row.get("pct_change", {})
+        flat.append({**base, **pct})
+    df = pd.DataFrame(flat)
+    st.dataframe(df, use_container_width=True)
+    st.json(r)
+
+
+def _render_flagged(r):
+    df = pd.DataFrame(res.get("rows", []))
+    st.dataframe(df, use_container_width=True)
+    st.json(r)
+
+
+def _render_conversion(r):
+    df = pd.DataFrame(res.get("rows", []))
+    st.dataframe(df, use_container_width=True)
+    st.json(r)
+
+
+st.subheader("Step 1: Ask the ADK Agent")
+default_prompt = f"""
+Compare July 2017 to August 2016 by device_type and traffic_source. \n
+Identify the flagged segments for the month of September 2016 by traffic/ conversion rule. \n
+Calculate the conversion rate by country & device type for the month of 01-2017.
+"""
+user_prompt = st.text_area("Describe what you want to analyze", value=default_prompt)
+
+if st.button("Run agent", type="primary"):
+    with st.spinner("Running ADK agent..."):
+        agent_out = run_adk_agent(user_prompt)
+
+    st.write("Agent output (parsed + raw):")
+    st.json(agent_out)
+
+    if agent_out.get("error"):
+        st.error(agent_out["error"])
+        if agent_out.get("model"):
+            st.info(f"Model used: {agent_out['model']} (set GENAI_MODEL to override)")
+        st.stop()
+
+    action = agent_out.get("action")
+    args = agent_out.get("arguments") or {}
+
+    if not action:
+        st.error("Agent did not return an action. Please refine your request.")
+    else:
+        st.success(f"Agent chose action: {action}")
+        with st.spinner("Executing selected action..."):
+            try:
+                if action == "compare_two_months":
+                    month_a = args.get("month_a")
+                    month_b = args.get("month_b")
+                    dims = args.get("dimensions") or DIMENSIONS
+                    if not (month_a and month_b):
+                        raise ValueError("compare_two_months requires month_a and month_b")
+                    res = compare_two_months(month_a, month_b, dims, project_id=project_id)
+                    _render_compare(res, dims)
+                elif action == "identify_flagged_segments":
+                    rule = args.get("rule", "traffic")
+                    res = flagged_segments(rule, project_id=project_id)
+                    _render_flagged(res)
+                elif action == "conversion_rate_by_country_and_device":
+                    month = args.get("month") or args.get("month_a") or args.get("month_b")
+                    if not month:
+                        raise ValueError("conversion_rate_by_country_and_device requires month")
+                    res = conversion_rate_by_country_device(month, project_id=project_id)
+                    _render_conversion(res)
+                else:
+                    st.error(f"Unsupported action returned by agent: {action}")
+            except Exception as exc:
+                st.error(f"Failed to execute action: {exc}")
+
+st.divider()
+st.subheader("Manual controls (bypass agent)")
 
 task = st.selectbox(
-    "Task",
+    "Direct tool run",
     [
         "Compare two months (% change per KPI)",
         "Flag segments by rule (traffic/conversion)",
         "Conversion rate by country × device (month)",
     ],
 )
-
-# project_id = st.text_input("Billing Project ID", value=DEFAULT_PROJECT)
-project_id = DEFAULT_PROJECT
-
-st.divider()
 
 if task == "Compare two months (% change per KPI)":
     colA, colB = st.columns(2)
@@ -34,33 +118,18 @@ if task == "Compare two months (% change per KPI)":
 
     dims = st.multiselect("Dimensions", DIMENSION_KEYS, default=DIMENSIONS)
 
-    if st.button("Run comparison"):
+    if st.button("Run comparison (manual)"):
         res = compare_two_months(month_a, month_b, dims, project_id=project_id)
-        rows = res["rows"]
-
-        # Flatten for display: show pct_change columns + segment columns
-        flat = []
-        for r in rows:
-            base = {d: r.get(d) for d in dims}
-            pct = r.get("pct_change", {})
-            flat.append({**base, **pct})
-
-        df = pd.DataFrame(flat)
-        st.dataframe(df, use_container_width=True)
-        st.json(res)
+        _render_compare(res, dims)
 
 elif task == "Flag segments by rule (traffic/conversion)":
     rule = st.selectbox("Rule", ["traffic", "conversion"])
-    if st.button("Run flagging"):
+    if st.button("Run flagging (manual)"):
         res = flagged_segments(rule, project_id=project_id)
-        df = pd.DataFrame(res["rows"])
-        st.dataframe(df, use_container_width=True)
-        st.json(res)
+        _render_flagged(res)
 
 else:
     month = st.text_input("Month (YYYY-MM)", value="2017-08")
-    if st.button("Compute conversion rates"):
+    if st.button("Compute conversion rates (manual)"):
         res = conversion_rate_by_country_device(month, project_id=project_id)
-        df = pd.DataFrame(res["rows"])
-        st.dataframe(df, use_container_width=True)
-        st.json(res)
+        _render_conversion(res)
