@@ -7,7 +7,7 @@
     - OPENAI_API_KEY
     - GOOGLE_CLOUD_PROJECT_ID
 ```bash
-  export GOOGLE_CLOUD_PROJECT='ad-performance-analysis-agent'
+  export GOOGLE_CLOUD_PROJECT='add-your-google-project'
   export GEMINI_API_KEY='ADD_YOUR_GEMINI_API_KEY'
   export GOOGLE_API_KEY='ADD_YOUR_GOOGLE_API_KEY'
 
