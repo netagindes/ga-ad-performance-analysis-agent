@@ -1,0 +1,11 @@
+# GA Sessions Data
+
+trafficSource [RECORD]: Information about the Traffic Source from which the session originated.
+
+geoNetwork [RECORD]: Information about the geography of the user.
+
+
+
+## Grouping Dimensions
+- trafic_source := trafficSource.source [STRING]: The source of the traffic source. Could be the name of the search engine, the referring hostname, or a value of the utm_source URL parameter.
+- user_country := geoNetwork.country [STRING]: The country from which sessions originated, based on IP address.
