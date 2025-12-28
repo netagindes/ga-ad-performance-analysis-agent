@@ -2,55 +2,55 @@
 
 ![MCP + ADK Agent Structure](image.png)
 
-## Step by Step Guide:
-[1] Make sure you add the following to your environment (you can use the attached .env file):
-    - OPENAI_API_KEY
-    - GOOGLE_CLOUD_PROJECT_ID
-```bash
-  export GOOGLE_CLOUD_PROJECT='add-your-google-project'
-  export GEMINI_API_KEY='ADD_YOUR_GEMINI_API_KEY'
-  export GOOGLE_API_KEY='ADD_YOUR_GOOGLE_API_KEY'
+## Preliminary Setups
 
-```
-[Optional] Run configuration check by running the config file.
+This code uses:
+* GCP project for BigQuery and Google ADK
+* Gemini API for Agent construction
 
-[2] Connect to your GCP account:
-```bash
-gcloud auth login
-gcloud auth application-default login
-```
+You are going to use **your own GCP project** and needs to:
+* Login to the project and extract the project ID: 
+  - Open [your project's homepage](https://console.cloud.google.com/welcome/new) - make sure this is the project you want to use.
+  - Refresh and copy the website URL to extract the project's id from the project query param:
+  `https://console.cloud.google.com/welcome/new?project=your-google-project-id` 
+  --> 
+      GOOGLE_PROJECT_ID='your-google-project-id'
+  **NOTE:** Make sure to use this value throughout google cli project setup and environment variable setups.
 
-[3] Run MCP server
-```bash
-mcp dev src/ga_ad_agent/ga_mcp_server.py
-```
+ * Generate a Google API Key
+  - Generate a Google API key for the project via the [Your GCP Project > APIs & Services > Credentials](https://console.cloud.google.com/apis/credentials?project=your-google-project-id)
+  - Press `show key`, copy the value and save it:
+      GOOGLE_API_KEY='YOUR_GOOGLE_API_KEY'
 
-[4] Run Ad Performance Analysis Agent
-
-If you use your local environment, and run the Streamlit Dashboard with the following command.
-
-```bash
-pip install -r requirements.txt
-streamlit run src/agent_app.py
-```
-
-[Optional] If you chose to use the Dockerfile - Note that it references an earlier (less fine) version and needs to be fixed before running.
-  - [Optional] run command:
-```bash
-docker compose up --build
-docker compose up --force-recreate
-```
-  - Open Streamlit dashboard: [Ad Performances Analysis Agent](http://localhost:8502)
-
-If you want access to my GCP project, please contact me.
+  * Enable the following APIs & Services from [Your GCP Project > APIs & Services > API Library](https://console.cloud.google.com/apis/library?project=your-google-project-id)
+  - [BigQuery API](https://console.cloud.google.com/apis/api/bigquery.googleapis.com/metrics?project=your-google-project-id)
+  - [Generative Language API](https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/metrics?project=your-google-project-id)
 
 
-**GCP Project**
+You are going to use **your own Gemini API key**:
+Login to your account (same account you use for the GCP project setups) in [Google AI Studio - API Keys](https://aistudio.google.com/app/api-keys) and generate a new Gemini API key, copy the value and save it:
+    GEMINI_API_KEY='YOUR_GEMINI_API_KEY'
+
+
+**NOTES** - Throughout the code execution:
+* Make sure you are *authenticating* with **your account** to ***your GCP project**
+* Using the same value assignment to the following environment variables:
+  - 'your-google-project-id' AS `GOOGLE_CLOUD_PROJECT`
+  - 'YOUR_GOOGLE_API_KEY' AS `GOOGLE_API_KEY`
+  - 'YOUR_GEMINI_API_KEY' AS `GEMINI_API_KEY`
+
+
+## Execution Guide - EXECUTION_GUID.md
+
+
+## My GCP Project
+[GooGle Cloud Console](https://console.cloud.google.com/welcome/new?project=ad-performance-analysis-agent)
 ```
     Name: "Ad Performance Analysis Agent"
     ID: "ad-performance-analysis-agent"
 ```
 
+*NOTE:* If you want access to my GCP project, please contact me.
 
 ## Input Dataset
 
