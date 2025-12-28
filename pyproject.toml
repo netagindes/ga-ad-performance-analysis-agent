@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-config-check = "src.ga_ad_agent.config:main"
+config-check = "src.config:main"
 mcp-server = "src.ga_ad_agent.ga_mcp_server:main"
 ga-ad-agent = "src.ga_ad_agent.agent_app:main"
 

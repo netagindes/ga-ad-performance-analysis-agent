@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any, Dict, List, Literal, Optional, Tuple
 import re
 import calendar
@@ -10,7 +8,7 @@ import json
 from google.cloud import bigquery
 from mcp.server.fastmcp import FastMCP
 
-from src.ga_ad_agent.constants import DEFAULT_PROJECT, DATASET, TABLE_WILDCARD, DIMENSIONS, KPI_FIELDS
+from src.constants import DEFAULT_PROJECT, DATASET, TABLE_WILDCARD, DIMENSIONS, KPI_FIELDS
 
 
 # -------------------------

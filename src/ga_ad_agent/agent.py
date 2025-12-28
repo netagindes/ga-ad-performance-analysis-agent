@@ -1,23 +1,24 @@
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
 import sys
 import time
 import uuid
-from pathlib import Path
 from typing import Any, Dict, List, Literal, Tuple
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from src.ga_ad_agent.constants import DEFAULT_PROJECT
+from google.adk.agents import Agent
+from google.adk.runners import InMemoryRunner
+from google.adk.tools.function_tool import FunctionTool
+
+from src import config as cfg
+from src.constants import DEFAULT_PROJECT
 
 RuleName = Literal["traffic", "conversion"]
 
-SERVER_SCRIPT_PATH = Path(__file__).with_name("ga_mcp_server.py")
-
+SERVER_SCRIPT_PATH = cfg.PROJECT_ROOT / "src/ga_ad_agent/ga_mcp_server.py"
 
 # -------------------------
 # Logging setup
@@ -128,10 +129,10 @@ def get_all(dimensions: List[str], project_id: str = DEFAULT_PROJECT) -> Dict[st
 
 # @tool("compare_two_months_tool")
 def compare_two_months(
-    month_a: str,
-    month_b: str,
-    dimensions: List[str],
-    project_id: str = DEFAULT_PROJECT,
+        month_a: str,
+        month_b: str,
+        dimensions: List[str],
+        project_id: str = DEFAULT_PROJECT,
 ) -> Dict[str, Any]:
     """
     1) Pull KPIs for month A and B for same dimensions
@@ -171,7 +172,7 @@ def compare_two_months(
 
         segment = {d: k[i] for i, d in enumerate(dimensions)}
 
-        changes = {}
+        changes: dict[str, float | None] = {}
         for metric in kpis:
             av = ra.get(metric, 0) if ra else 0
             bv = rb.get(metric, 0) if rb else 0
@@ -209,8 +210,8 @@ def compare_two_months(
 
 
 def flagged_segments(
-    rule: RuleName,
-    project_id: str = DEFAULT_PROJECT,
+        rule: RuleName,
+        project_id: str = DEFAULT_PROJECT,
 ) -> Dict[str, Any]:
     """
     Requirement:
@@ -249,8 +250,8 @@ def flagged_segments(
 
 
 def conversion_rate_by_country_device(
-    month: str,
-    project_id: str = DEFAULT_PROJECT,
+        month: str,
+        project_id: str = DEFAULT_PROJECT,
 ) -> Dict[str, Any]:
     """
     Requirement:
@@ -293,11 +294,6 @@ def conversion_rate_by_country_device(
     }
 
 
-from google.adk.agents import Agent
-from google.adk.runners import InMemoryRunner
-from google.adk.tools.function_tool import FunctionTool
-
-
 def _compare_months_tool(month_a: str, month_b: str, dimensions: list[str], project_id: str = DEFAULT_PROJECT):
     """Compare KPIs between two months using MCP-backed helper."""
     res = compare_two_months(month_a, month_b, dimensions, project_id=project_id)
@@ -315,14 +311,15 @@ def _conversion_rate_by_country_device_tool(month: str, project_id: str = DEFAUL
     res = conversion_rate_by_country_device(month, project_id=project_id)
     return res.get("rows", [])
 
+
 # Wrap functions as ADK FunctionTool instances
 compare_months_tool = FunctionTool(_compare_months_tool)
 flagged_segments_tool = FunctionTool(_flagged_segments_tool)
 conversion_rate_by_country_device_tool = FunctionTool(_conversion_rate_by_country_device_tool)
 
-# Model selection: allow override via GENAI_MODEL.
+# Model selection: allow override via GEMINI_MODEL.
 # Use a v1beta-available model by default to avoid 404s on older endpoints.
-DEFAULT_GENAI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
 agent = Agent(
     name="ad_performance_agent",
@@ -334,16 +331,20 @@ agent = Agent(
     instruction="""
     You can do exactly these actions (choose one):
     1) compare_two_months: Compare KPIs between two months for requested dimensions and report % changes.
-    2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic|conversion), return flagged segments.
-    3) conversion_rate_by_country_and_device: For a timeframe, return conversion rate per (user_country, device_type), ordered high->low. Use a month when specified, or use "all_data" when the user asks for all history—do not force a month.
+    2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic|conversion), 
+       return flagged segments.
+    3) conversion_rate_by_country_and_device: For a timeframe, return conversion rate per (user_country, device_type), 
+       ordered high->low. 
+       Use a month when specified, or use "all_data" when the user asks for all history—do not force a month.
        conversion rate = (total_conversions / total_visitors) for the given timeframe
 
     When selecting dimensions, only use these known fields:
     traffic_source, medium, device_type, user_country, page_title.
-    Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. If the user wants all history, keep the literal value "all_data".
+    Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. 
+    If the user wants all history, keep the literal value "all_data".
     Return JSON only with keys: action, arguments.
     """,
-    model=DEFAULT_GENAI_MODEL,  # Set GENAI_MODEL env to override.
+    model=DEFAULT_GEMINI_MODEL,  # Set GEMINI_MODEL env to override.
     tools=[compare_months_tool, flagged_segments_tool, conversion_rate_by_country_device_tool],
 )
 
@@ -371,39 +372,41 @@ def _parse_agent_json(text: str) -> Dict[str, Any]:
     """
     Try to parse JSON from model text. Falls back to {}
     """
-    if not text:
-        return {}
+    if not text.strip():
+        raise ValueError(f"Empty text passed to _parse_agent_json(): {text}")
 
     try:
         return json.loads(text)
-    except Exception:
+    except Exception as e:
+        logger.info(f"Failed to parse JSON: {e}")
         pass
 
     # Heuristic: grab first {...}
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
-        snippet = text[start : end + 1]
+        snippet = text[start: end + 1]
         try:
             return json.loads(snippet)
-        except Exception:
+        except Exception as e:
+            logger.error(f"ValueError: Failed to parse JSON: {e}")
             return {}
 
     return {}
 
 
 def run_adk_agent(
-    user_message: str,
-    *,
-    user_id: str = "streamlit-user",
-    session_id: str | None = None,
+        user_message: str,
+        *,
+        user_id: str = "streamlit-user",
+        session_id: str | None = None,
 ) -> Dict[str, Any]:
     """
     Run the ADK agent once and return parsed action/arguments plus raw text.
     This is used by the Streamlit UI as the first processing step.
     """
 
-    # # Basic env guard so we fail fast with a useful error in UI.
+    # # Basic env guard - fail fast with a useful error in UI.
     # has_google_key = bool(os.getenv("GOOGLE_API_KEY"))
     # has_vertex = bool(os.getenv("GOOGLE_CLOUD_PROJECT")) #and os.getenv("VERTEXAI_LOCATION"))
     # if not (has_google_key or has_vertex):
@@ -416,7 +419,7 @@ def run_adk_agent(
     runner = InMemoryRunner(agent=agent, app_name="ad_performance_agent")
 
     async def _run():
-        events = await runner.run_debug(
+        async_events = await runner.run_debug(
             user_messages=user_message,
             user_id=user_id,
             session_id=session_id or f"session-{uuid.uuid4()}",
@@ -424,14 +427,14 @@ def run_adk_agent(
             verbose=False,
         )
         await runner.close()
-        return events
+        return async_events
 
     try:
         events = asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001
         return {
             "error": f"ADK agent failed: {exc}",
-            "model": DEFAULT_GENAI_MODEL,
+            "model": DEFAULT_GEMINI_MODEL,
             "raw_text": None,
             "event_count": 0,
         }
@@ -440,7 +443,17 @@ def run_adk_agent(
     for event in events:
         response_text = _extract_text_from_event(event) or response_text
 
-    parsed = _parse_agent_json(response_text or "")
+    try:
+        parsed = _parse_agent_json(response_text or "")
+    except ValueError as e:
+        logger.error(f"ValueError: empty response text: {e}")
+        
+        return {
+            "error": f"Empty Response passed to JSON parser: {e}",
+            "model": DEFAULT_GEMINI_MODEL,
+            "raw_text": response_text,
+            "event_count": len(events),
+        }
 
     return {
         "action": parsed.get("action"),
@@ -448,5 +461,3 @@ def run_adk_agent(
         "raw_text": response_text,
         "event_count": len(events),
     }
-
-

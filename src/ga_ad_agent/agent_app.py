@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from src.ga_ad_agent.constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
+from src.constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
 from src.ga_ad_agent.agent import (
     compare_two_months,
     conversion_rate_by_country_device,
@@ -42,10 +42,10 @@ def _render_conversion(r):
     st.json(r)
 
 
-st.subheader("Step 1: Ask the ADK Agent")
+st.subheader("Ask the ADK Agent")
 default_prompt = f"""
 Compare July 2017 to August 2016 by device_type and traffic_source. \n
-Identify the flagged segments for the month of September 2016 by traffic/ conversion rule. \n
+Identify the flagged segments by traffic/ conversion rule. \n
 Calculate the conversion rate by country & device type for the month of 01-2017.
 """
 user_prompt = st.text_area("Describe what you want to analyze", value=default_prompt)
@@ -60,7 +60,7 @@ if st.button("Run agent", type="primary"):
     if agent_out.get("error"):
         st.error(agent_out["error"])
         if agent_out.get("model"):
-            st.info(f"Model used: {agent_out['model']} (set GENAI_MODEL to override)")
+            st.info(f"Model used: {agent_out['model']} (set GEMINI_MODEL to override)")
         st.stop()
 
     action = agent_out.get("action")
@@ -96,7 +96,7 @@ if st.button("Run agent", type="primary"):
                 st.error(f"Failed to execute action: {exc}")
 
 st.divider()
-st.subheader("Manual controls (bypass agent)")
+st.subheader("Use Logical Controls (Agentic Tools)")
 
 task = st.selectbox(
     "Direct tool run",

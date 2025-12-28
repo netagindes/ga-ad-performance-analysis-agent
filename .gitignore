@@ -4,3 +4,6 @@
 __pycache__/
 *.DS_Store
 *.idea/
+tests/*
+*.dockerignore
+/docs/AI Engineer Home Assignment: Ad Performance Anal

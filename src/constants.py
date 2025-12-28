@@ -1,14 +1,16 @@
 # constants.py
-from __future__ import annotations
-
 import os
 from typing import Dict, List
 
-# ---- BigQuery config ----
-DEFAULT_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "ad-performance-analysis-agent")
+import config as cfg
+
+
+# Keep DEFAULT_PROJECT for billing/quota.
+DEFAULT_PROJECT: str = cfg.GOOGLE_CLOUD_PROJECT
 
 # Public dataset lives under bigquery-public-data project.
-# Keep DEFAULT_PROJECT for billing/quota.
+# Date-sharing dataset.
+# [Google Analytics Sample](https://console.cloud.google.com/marketplace/product/obfuscated-ga360-data/obfuscated-ga360-data)
 DATASET: str = "bigquery-public-data.google_analytics_sample"
 TABLE_WILDCARD: str = f"{DATASET}.ga_sessions_*"
 
