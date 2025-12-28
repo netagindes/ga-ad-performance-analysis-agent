@@ -1,11 +1,63 @@
 # GA Sessions Data
 
+
+The data includes The data is typical of what an e-commerce website would see and includes the following information:
+- **Traffic source data:** information about where website visitors originate, including data about organic traffic, paid search traffic, and display traffic
+- **Content data:** information about the behavior of users on the site, such as URLs of pages that visitors look at, how they interact with content, etc.
+- **Transactional data:** information about the transactions on the Google Merchandise Store website.
+
+**Tables**
+
+* Within each dataset, a table is imported for each day of export. Daily tables have the format "ga_sessions_YYYYMMDD".
+* Intraday tables have the format "ga_sessions_intraday_YYYYMMDD".
+
+
+**Rows**
+Each row within a table corresponds to a session in Analytics 360.
+
+
+**Columns**
+
+fullVisitorId [STRING]: The unique visitor ID.
+visitStartTime [INTEGER]: The timestamp (expressed as POSIX time).
+
 trafficSource [RECORD]: Information about the Traffic Source from which the session originated.
 
 geoNetwork [RECORD]: Information about the geography of the user.
 
+device [RECORD]: Information about the user devices.
+
+hits [RECORD]: This row and nested fields are populated for any and all types of hits.
+hits.type [STRING]: The type of hit. One of: "PAGE", "TRANSACTION", "ITEM", "EVENT", "SOCIAL", "APPVIEW", "EXCEPTION".
+* Timing hits are considered an event type in the Analytics backend. When you query time-related fields (e.g., hits.latencyTracking.pageLoadTime), choose hits.type as Event if you want to use hit.type in your queries.
+
+hits.page [RECORD]: This section is populated for each hit with type = "PAGE".
+
+totals [RECORD]: This section contains aggregate values across the session.
+
+totals.timeOnSite [INTEGER]: Total time of the session expressed in seconds.
 
 
 ## Grouping Dimensions
-- trafic_source := trafficSource.source [STRING]: The source of the traffic source. Could be the name of the search engine, the referring hostname, or a value of the utm_source URL parameter.
+
+- traffic_source := trafficSource.source [STRING]: The source of the traffic source. Could be the name of the search engine, the referring hostname, or a value of the utm_source URL parameter.
+
 - user_country := geoNetwork.country [STRING]: The country from which sessions originated, based on IP address.
+
+- medium := trafficSource.medium [STRING]: The medium of the traffic source. Could be "organic", "cpc", "referral", or the value of the utm_medium URL parameter.
+
+- device_type := device.deviceCategory [STRING]: The type of device (Mobile, Tablet, Desktop).
+* ENUM: desktop, mobile, tablet
+
+- page_title := hits.page.pageTitle [STRING]: The page title.
+
+
+## Key Metrics Aggregation (KPIs):
+
+- total_visitors := COUNT(DISTINCT fullVisitorId) [INTEGER]: Measures audience size
+
+- total_pageviews := SUM(CASE WHEN hits.type = 'PAGE' THEN 1 ELSE 0 END) [INTEGER]: Measures content engagement
+
+- avg_time_on_site_seconds := AVG(totals.timeOnSite) [FLOAT]: Measures engagement quality
+
+- total_conversions := SUM(CASE WHEN totals.transactions >= 1 THEN 1 ELSE 0 END) [INTEGER]: Measures business outcomes
