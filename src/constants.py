@@ -1,16 +1,14 @@
-# constants.py
-import os
 from typing import Dict, List
 
-import config as cfg
+from src import config as cfg
 
 
 # Keep DEFAULT_PROJECT for billing/quota.
 DEFAULT_PROJECT: str = cfg.GOOGLE_CLOUD_PROJECT
 
-# Public dataset lives under bigquery-public-data project.
-# Date-sharing dataset.
-# [Google Analytics Sample](https://console.cloud.google.com/marketplace/product/obfuscated-ga360-data/obfuscated-ga360-data)
+# Public dataset lives under bigquery-public-data project. Date-sharing dataset.
+# [Google Analytics Sample](
+# https://console.cloud.google.com/marketplace/product/obfuscated-ga360-data/obfuscated-ga360-data)
 DATASET: str = "bigquery-public-data.google_analytics_sample"
 TABLE_WILDCARD: str = f"{DATASET}.ga_sessions_*"
 

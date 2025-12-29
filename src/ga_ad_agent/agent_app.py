@@ -1,8 +1,11 @@
-import streamlit as st
+from typing import cast
+
 import pandas as pd
+import streamlit as st
 
 from src.constants import DEFAULT_PROJECT, DIMENSION_KEYS, DIMENSIONS
 from src.ga_ad_agent.agent import (
+    RuleName,
     compare_two_months,
     conversion_rate_by_country_device,
     flagged_segments,
@@ -81,7 +84,7 @@ if st.button("Run agent", type="primary"):
                     res = compare_two_months(month_a, month_b, dims, project_id=project_id)
                     _render_compare(res, dims)
                 elif action == "identify_flagged_segments":
-                    rule = args.get("rule", "traffic")
+                    rule = cast(RuleName, args.get("rule", "traffic"))
                     res = flagged_segments(rule, project_id=project_id)
                     _render_flagged(res)
                 elif action == "conversion_rate_by_country_and_device":
@@ -121,7 +124,7 @@ if task == "Compare two months (% change per KPI)":
         _render_compare(res, dims)
 
 elif task == "Flag segments by rule (traffic/conversion)":
-    rule = st.selectbox("Rule", ["traffic", "conversion"])
+    rule = cast(RuleName, st.selectbox("Rule", ["traffic", "conversion"]))
     if st.button("Run flagging (manual)"):
         res = flagged_segments(rule, project_id=project_id)
         _render_flagged(res)

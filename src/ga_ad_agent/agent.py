@@ -300,7 +300,7 @@ def _compare_months_tool(month_a: str, month_b: str, dimensions: list[str], proj
     return res.get("rows", [])
 
 
-def _flagged_segments_tool(rule: str, project_id: str = DEFAULT_PROJECT):
+def _flagged_segments_tool(rule: RuleName, project_id: str = DEFAULT_PROJECT):
     """Return flagged segments based on traffic or conversion rule."""
     res = flagged_segments(rule, project_id=project_id)
     return res.get("rows", [])

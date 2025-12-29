@@ -52,11 +52,12 @@ GOOGLE_API_KEY="your-google-token"
 
 ## [1.3] Run Configuration Check [Optional]
 ```bash
-python ./src/ga_ad_agent/config.py
+python ./src/config.py
 ```
 
 [2] [Optional] Run the MCP server 
 ```bash
+pip install "mcp[cli]"
 mcp dev src/ga_ad_agent/ga_mcp_server.py
 ```
 **NOTE:** If you ran the MCP server, you should keep the server running and continue using a different terminal window (set to the project root with active environment)

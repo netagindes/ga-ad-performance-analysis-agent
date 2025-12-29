@@ -35,7 +35,7 @@ REGION: str = fetch_required_env_var("REGION", "US")
 
 def main():
 
-    if not all([GOOGLE_CLOUD_PROJECT, GEMINI_API_KEY, GOOGLE_API_KEY]): # Check if all required environment variables are set
+    if not all([GOOGLE_CLOUD_PROJECT, GEMINI_API_KEY, GOOGLE_API_KEY]):
         print("Missing required environment settings")
 
         if not ENV_PATH.exists():
