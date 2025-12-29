@@ -21,6 +21,11 @@ st.caption("Requests go through the ADK agent first, then execute via MCP tools.
 project_id = DEFAULT_PROJECT
 
 
+def _log_mcp_tool(tool_name: str):
+    """Flow-visualizer style log for MCP tool execution."""
+    st.info(f"Agent used MCP tool: {tool_name}")
+
+
 def _render_compare(r, dimensions):
     rows = r.get("rows", [])
     flat = []
@@ -76,6 +81,7 @@ if st.button("Run agent", type="primary"):
         with st.spinner("Executing selected action..."):
             try:
                 if action == "compare_two_months":
+                    _log_mcp_tool("get_monthly_data")
                     month_a = args.get("month_a")
                     month_b = args.get("month_b")
                     dims = args.get("dimensions") or DIMENSIONS
@@ -84,10 +90,12 @@ if st.button("Run agent", type="primary"):
                     res = compare_two_months(month_a, month_b, dims, project_id=project_id)
                     _render_compare(res, dims)
                 elif action == "identify_flagged_segments":
+                    _log_mcp_tool("get_all_data")
                     rule = cast(RuleName, args.get("rule", "traffic"))
                     res = flagged_segments(rule, project_id=project_id)
                     _render_flagged(res)
                 elif action == "conversion_rate_by_country_and_device":
+                    _log_mcp_tool("get_monthly_data")
                     month = args.get("month") or args.get("month_a") or args.get("month_b")
                     if not month:
                         raise ValueError("conversion_rate_by_country_and_device requires month")
@@ -120,17 +128,20 @@ if task == "Compare two months (% change per KPI)":
     dims = st.multiselect("Dimensions", DIMENSION_KEYS, default=DIMENSIONS)
 
     if st.button("Run comparison (manual)"):
+        _log_mcp_tool("get_monthly_data")
         res = compare_two_months(month_a, month_b, dims, project_id=project_id)
         _render_compare(res, dims)
 
 elif task == "Flag segments by rule (traffic/conversion)":
     rule = cast(RuleName, st.selectbox("Rule", ["traffic", "conversion"]))
     if st.button("Run flagging (manual)"):
+        _log_mcp_tool("get_all_data")
         res = flagged_segments(rule, project_id=project_id)
         _render_flagged(res)
 
 else:
     month = st.text_input("Month (YYYY-MM)", value="2017-08")
     if st.button("Compute conversion rates (manual)"):
+        _log_mcp_tool("get_monthly_data")
         res = conversion_rate_by_country_device(month, project_id=project_id)
         _render_conversion(res)
