@@ -16,7 +16,7 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 
 from src import config as cfg
-from src.constants import DEFAULT_PROJECT
+from src.constants import DEFAULT_PROJECT, DIMENSION_KEYS
 
 RuleName = Literal["traffic", "conversion"]
 
@@ -213,6 +213,7 @@ def compare_two_months(
 
 def flagged_segments(
         rule: RuleName,
+        dimensions: list[str] | None = None,
         project_id: str = DEFAULT_PROJECT,
 ) -> Dict[str, Any]:
     """
@@ -222,23 +223,58 @@ def flagged_segments(
     """
     logger.info("flagged_segments called: rule=%s project_id=%s", rule, project_id)
 
-    dims = ["traffic_source", "medium", "device_type", "page_title"]
+    allowed_dims = [d for d in DIMENSION_KEYS if d != "user_country"]
+    raw_dims = dimensions or allowed_dims
+
+    seen = set()
+    dims: list[str] = []
+    for d in raw_dims:
+        if d not in allowed_dims:
+            raise ValueError(f"Invalid dimension for flagged_segments: {d}. Allowed: {allowed_dims}")
+        if d not in seen:
+            dims.append(d)
+            seen.add(d)
+
+    if not dims:
+        raise ValueError("flagged_segments requires at least one dimension")
+
+    if rule == "traffic":
+        rule_kpis = ["total_visitors", "total_conversions"]
+        enforcement_metrics = ["avg_time_on_site_seconds", "total_pageviews"]
+
+        def _rule_ok(m: Dict[str, Any]) -> bool:
+            return m["avg_time_on_site_seconds"] < 120 and m["total_pageviews"] < 30
+    elif rule == "conversion":
+        rule_kpis = ["total_visitors", "avg_time_on_site_seconds"]
+        enforcement_metrics = ["total_conversions", "total_pageviews"]
+
+        def _rule_ok(m: Dict[str, Any]) -> bool:
+            return m["total_conversions"] == 0 and m["total_pageviews"] > 250
+    else:
+        raise ValueError(f"Unknown rule: {rule}")
+
+    kpi_keys = list(dict.fromkeys(rule_kpis + enforcement_metrics))
+
     data = get_all(dims, project_id)
     rows = data.get("rows", [])
     logger.info("flagged_segments fetched rows=%d", len(rows))
 
     flagged = []
     for r in rows:
-        pv = r.get("total_pageviews", 0) or 0
-        avg_t = r.get("avg_time_on_site_seconds", 0) or 0
-        conv = r.get("total_conversions", 0) or 0
+        # New block - start
+        metrics = {
+            "total_pageviews": r.get("total_pageviews", 0) or 0,
+            "avg_time_on_site_seconds": r.get("avg_time_on_site_seconds", 0) or 0,
+            "total_conversions": r.get("total_conversions", 0) or 0,
+            "total_visitors": r.get("total_visitors", 0) or 0,
+        }
 
-        if rule == "traffic":
-            if avg_t < 120 and pv < 30:
-                flagged.append(r)
-        elif rule == "conversion":
-            if conv == 0 and pv > 250:
-                flagged.append(r)
+        if _rule_ok(metrics):
+            out_row = {d: r.get(d) for d in dims}
+            for k in kpi_keys:
+                out_row[k] = metrics.get(k)
+            flagged.append(out_row)
+            # New block - end
 
     logger.info("flagged_segments flagged=%d (rule=%s)", len(flagged), rule)
 
@@ -246,6 +282,7 @@ def flagged_segments(
         "task": "flagged_segments",
         "rule": rule,
         "dimensions": dims,
+        "kpis": kpi_keys,
         "row_count": len(flagged),
         "rows": flagged,
     }
@@ -296,33 +333,41 @@ def conversion_rate_by_country_device(
     }
 
 
-def _compare_months_tool(month_a: str, month_b: str, dimensions: list[str], project_id: str = DEFAULT_PROJECT):
+def compare_two_months_tool(
+        month_a: str,
+        month_b: str,
+        dimensions: list[str],
+        project_id: str = DEFAULT_PROJECT,
+):
     """Compare KPIs between two months using MCP-backed helper."""
     res = compare_two_months(month_a, month_b, dimensions, project_id=project_id)
     return res.get("rows", [])
 
 
-def _flagged_segments_tool(rule: RuleName, project_id: str = DEFAULT_PROJECT):
+def identify_flagged_segments(
+        rule: RuleName,
+        dimensions: list[str] | None = None,
+        project_id: str = DEFAULT_PROJECT,
+):
     """Return flagged segments based on traffic or conversion rule."""
-    res = flagged_segments(rule, project_id=project_id)
-    return res.get("rows", [])
+    res = flagged_segments(rule, dimensions=dimensions, project_id=project_id)
+    return res
 
 
-def _conversion_rate_by_country_device_tool(month: str, project_id: str = DEFAULT_PROJECT):
+def calculate_conversion_rate_by_country_and_device(
+        month: str,
+        project_id: str = DEFAULT_PROJECT,
+):
     """Return conversion rate by country and device."""
     res = conversion_rate_by_country_device(month, project_id=project_id)
     return res.get("rows", [])
 
 
 # Wrap functions as ADK FunctionTool instances
-compare_months_tool = FunctionTool(_compare_months_tool)
-flagged_segments_tool = FunctionTool(_flagged_segments_tool)
-conversion_rate_by_country_device_tool = FunctionTool(_conversion_rate_by_country_device_tool)
+compare_months_tool = FunctionTool(compare_two_months_tool)
+flagged_segments_tool = FunctionTool(identify_flagged_segments)
+conversion_rate_by_country_device_tool = FunctionTool(calculate_conversion_rate_by_country_and_device)
 
-# DEFAULT_MCP_SERVER = StdioServerParameters(
-#     command="python",
-#     args=["-m", "src.ga_ad_agent.ga_mcp_server"],
-# )
 
 server_params = StdioServerParameters(
         command=sys.executable,
@@ -353,43 +398,33 @@ You are an Ad Performance Analysis Agent, specialized in the analysis of the GA 
 dataset GA Sample: `bigquery-public-data.google_analytics_sample.ga_sessions_*`.
 
 You MUST solve requests using tools and return results grounded in tool outputs.
-**Available abilities:**
-1) compare_two_months: Compare KPIs between two months for requested dimensions (optional)
-    - Dimensions are optional, if not provided, use all dimensions as default dimensions request - 
-        traffic_source, user_country, medium, device_type, page_title.
-    - Compute the KPIs percentage change (between the months) per KPI per segment. 
-    - Provide for each segment the percentage change between the months in each KPI.
-2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic | conversions) 
-    identify flagged segments, for all data;
-    - For the given rule name, identify the flagging rule and enforce it:
-        - traffic rule --> enforce: avg_time_on_site_seconds<120 and total_pageviews<=30
-        - conversions rule --> enforce: total_conversions=0 and total_pageviews>250
-    - Extract the given rule KPIs, per given dimension and for all data:
-        - traffic rule --> kpis: total_visitors, total_conversions
-        - conversions rule --> kpis: total_visitors, avg_time_on_site_seconds
-    - Find all flagged segments for the given rule name all over the data.
-    - Return segments that match the requested dimensions, for the given rule name.
-3) conversion_rate_by_country_and_device: Compute the conversion rate for each user country on each device 
-    on a given month per dimension, ordered from highest to lowest.
-    - For a given month and dimensions (including user_country, device_type) remove rows with zeros for total_visitors
-        and total_conversions, 
-    - Calculate the conversion rate (conversion_rate = total_conversions / total_visitors), per dimension, 
-        ordered high->low.
-    - Provide for each dimension the given month conversion rate, ordered from highest to lowest.
+**Available abilities (use these exact action names):**
+1) compare_two_months (action): Compare KPIs between two months for requested dimensions (optional)
+    - Dimensions optional; default to all: traffic_source, user_country, medium, device_type, page_title.
+    - Compute % change per KPI per segment between months and return segments with pct changes.
+2) identify_flagged_segments (action): Given a rule (traffic | conversion) and optional dimensions 
+    (exclude user_country), return flagged segments over all data.
+    - Inputs:
+        - rule (required): traffic | conversion
+        - dimensions (optional): subset of [traffic_source, medium, device_type, page_title]; default is all four.
+    - Enforce:
+        - traffic: avg_time_on_site_seconds < 120 AND total_pageviews < 30
+        - conversion: total_conversions = 0 AND total_pageviews > 250
+    - Return for each flagged segment: the dimensions used, rule, and KPIs:
+        - traffic -> total_visitors, total_conversions (plus flagging metrics)
+        - conversion -> total_visitors, avg_time_on_site_seconds (plus flagging metrics)
+3) conversion_rate_by_country_and_device (action): Compute conversion rate per (user_country, device_type) for a month, ordered high->low.
+    - Drop rows with zeros for total_visitors and total_conversions.
+    - conversion_rate = total_conversions / total_visitors.
 
 **Notes:**
-- Always be explicit about which month(s), dimensions, and rule were used.
-- When selecting dimensions / segments, only use these known fields: 
-    traffic_source, medium, device_type, user_country, page_title.
-- When selecting KPIs (Key Metrics Aggregation), only use these known fields: 
-    total_visitors, total_pageviews,avg_time_on_site_seconds, total_conversions 
-- Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. 
+- Always be explicit about month(s), dimensions, and rule used.
+- Only use dimensions: traffic_source, medium, device_type, user_country, page_title.
+- Only use KPIs: total_visitors, total_pageviews, avg_time_on_site_seconds, total_conversions.
+- Preserve user month format (YYYY-MM or YYYY-MM-01); "all_data" literal means full history.
 
 **Return JSON only with keys:** action, arguments.
-- If the user wants all history, keep the literal value "all_data".
-- If the user asks for raw KPIs for a month or all-time by dimensions, you may call MCP tools:
-    - get_monthly_data(month, dimensions)
-    - get_all_data(dimensions)
+- For raw KPIs, you may call MCP tools: get_monthly_data(month, dimensions) or get_all_data(dimensions).
 """
 
 agent = LlmAgent(
@@ -442,12 +477,12 @@ def _parse_agent_json(text: str) -> Dict[str, Any]:
     Try to parse JSON from model text. Falls back to {}
     """
     if not text.strip():
-        raise ValueError(f"Empty text passed to _parse_agent_json(): {text}")
+        raise ValueError(f"Empty text passed to _parse_agent_json(): {text!r}")
 
     try:
         return json.loads(text)
     except Exception as e:
-        logger.info(f"Failed to parse JSON: {e}")
+        logger.info("Failed to parse JSON directly: %s text_head=%r", e, text[:200])
         pass
 
     # Heuristic: grab first {...}
@@ -523,6 +558,16 @@ def run_adk_agent(
             "raw_text": response_text,
             "event_count": len(events),
         }
+    # New block - start
+    except Exception as e:
+        logger.exception("Unexpected JSON parse error: %s", e)
+        return {
+            "error": f"Failed to parse agent JSON: {e}",
+            "model": DEFAULT_GEMINI_MODEL,
+            "raw_text": response_text,
+            "event_count": len(events),
+        }
+        # New block - end
 
     return {
         "action": parsed.get("action"),
