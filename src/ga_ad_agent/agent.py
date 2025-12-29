@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 import sys
 import time
 import uuid
@@ -16,7 +17,7 @@ from google.adk.tools.mcp_tool import McpToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 
 from src import config as cfg
-from src.constants import DEFAULT_PROJECT, DIMENSION_KEYS
+from src.constants import DEFAULT_PROJECT, DIMENSION_KEYS, KPI_FIELDS
 
 RuleName = Literal["traffic", "conversion"]
 
@@ -384,47 +385,39 @@ toolset = McpToolset(
 # Use a v1beta-available model by default to avoid 404s on older endpoints.
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
-LLM_AGENT_DESCRIPTION = f""" Analyzes [Google Analytics Sample - Obfuscated Google Analytics 360 data](
-https://console.cloud.google.com/marketplace/product/obfuscated-ga360-data/obfuscated-ga360-data) dataset, 
-and answers user questions about it. 
+LLM_AGENT_DESCRIPTION = f""" 
+Agent to answer questions about Google Analytics data stored in BigQuery public dataset `bigquery-public-data.google_analytics_sample.ga_sessions_*`.
 Uses: 
     - MCP tools (get_monthly_data/get_all_data) via MCP Server
     - deterministic function tools (compare_two_months/flagged_segments/conversion_rate_by_country_device) 
-        that implement your assignment 
-abilities. Prefer deterministic results."""
+        that implement your assignment abilities. 
+Prefer deterministic results."""
 
 LLM_AGENT_INSTRUCTIONS = f"""
-You are an Ad Performance Analysis Agent, specialized in the analysis of the GA Sessions data from the BigQuery public 
-dataset GA Sample: `bigquery-public-data.google_analytics_sample.ga_sessions_*`.
+You are a Google Analytics agent that must respond with a JSON action + arguments and ground answers in tool outputs.
 
-You MUST solve requests using tools and return results grounded in tool outputs.
-**Available abilities (use these exact action names):**
-1) compare_two_months (action): Compare KPIs between two months for requested dimensions (optional)
-    - Dimensions optional; default to all: traffic_source, user_country, medium, device_type, page_title.
-    - Compute % change per KPI per segment between months and return segments with pct changes.
-2) identify_flagged_segments (action): Given a rule (traffic | conversion) and optional dimensions 
-    (exclude user_country), return flagged segments over all data.
-    - Inputs:
-        - rule (required): traffic | conversion
-        - dimensions (optional): subset of [traffic_source, medium, device_type, page_title]; default is all four.
-    - Enforce:
-        - traffic: avg_time_on_site_seconds < 120 AND total_pageviews < 30
-        - conversion: total_conversions = 0 AND total_pageviews > 250
-    - Return for each flagged segment: the dimensions used, rule, and KPIs:
-        - traffic -> total_visitors, total_conversions (plus flagging metrics)
-        - conversion -> total_visitors, avg_time_on_site_seconds (plus flagging metrics)
-3) conversion_rate_by_country_and_device (action): Compute conversion rate per (user_country, device_type) for a month, ordered high->low.
-    - Drop rows with zeros for total_visitors and total_conversions.
-    - conversion_rate = total_conversions / total_visitors.
+**Use only these action names:**
+1) get_monthly_data: fetch KPIs for a month.
+    - Inputs: month (YYYY-MM), dimensions (subset of {DIMENSION_KEYS}).
+2) get_all_data: fetch KPIs across all months.
+    - Inputs: dimensions (subset of {DIMENSION_KEYS}).
+3) compare_two_months: compare KPIs between two months for given dimensions (optional).
+    - Dimensions default to all: traffic_source, user_country, medium, device_type, page_title.
+    - Compute % change per KPI per segment.
+4) identify_flagged_segments: apply a rule (traffic | conversion) across all data (exclude user_country).
+    - Inputs: rule=traffic|conversion; dimensions optional subset of [traffic_source, medium, device_type, page_title] (defaults to all four).
+    - traffic rule: avg_time_on_site_seconds < 120 AND total_pageviews < 30
+    - conversion rule: total_conversions = 0 AND total_pageviews > 250
+5) conversion_rate_by_country_and_device: compute conversion rate per (user_country, device_type) for a month.
+    - Inputs: month (YYYY-MM). Drop rows with zeros for total_visitors and total_conversions. conversion_rate = total_conversions / total_visitors.
 
-**Notes:**
-- Always be explicit about month(s), dimensions, and rule used.
-- Only use dimensions: traffic_source, medium, device_type, user_country, page_title.
-- Only use KPIs: total_visitors, total_pageviews, avg_time_on_site_seconds, total_conversions.
-- Preserve user month format (YYYY-MM or YYYY-MM-01); "all_data" literal means full history.
+**Important context:**
+- Dataset: `bigquery-public-data.google_analytics_sample.ga_sessions_*` (Aug 2016–Aug 2017). Keep month within this range.
+- Only use dimensions from: {DIMENSION_KEYS}
+- Only use KPIs: {KPI_FIELDS}
+- Preserve user month format (YYYY-MM or YYYY-MM-01); the literal "all_data" means full history.
 
-**Return JSON only with keys:** action, arguments.
-- For raw KPIs, you may call MCP tools: get_monthly_data(month, dimensions) or get_all_data(dimensions).
+**Always return JSON with keys:** action, arguments.
 """
 
 agent = LlmAgent(
@@ -472,24 +465,38 @@ def _extract_text_from_event(event: Any) -> str | None:
     return joined or None
 
 
+def _strip_code_fences(text: str) -> str:
+    """
+    Remove surrounding Markdown code fences such as ```json ... ``` if present.
+    Keeps inner content unchanged.
+    """
+    stripped = text.strip()
+    fence = re.compile(r"^```[a-zA-Z0-9_-]*\n(?P<body>.*)\n```$", re.DOTALL)
+    match = fence.match(stripped)
+    if match:
+        return match.group("body").strip()
+    return stripped
+
+
 def _parse_agent_json(text: str) -> Dict[str, Any]:
     """
     Try to parse JSON from model text. Falls back to {}
     """
-    if not text.strip():
+    cleaned = _strip_code_fences(text)
+    if not cleaned.strip():
         raise ValueError(f"Empty text passed to _parse_agent_json(): {text!r}")
 
     try:
-        return json.loads(text)
+        return json.loads(cleaned)
     except Exception as e:
-        logger.info("Failed to parse JSON directly: %s text_head=%r", e, text[:200])
+        logger.info("Failed to parse JSON directly: %s text_head=%r", e, cleaned[:200])
         pass
 
     # Heuristic: grab first {...}
-    start = text.find("{")
-    end = text.rfind("}")
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
     if start != -1 and end != -1 and end > start:
-        snippet = text[start: end + 1]
+        snippet = cleaned[start: end + 1]
         try:
             return json.loads(snippet)
         except Exception as e:

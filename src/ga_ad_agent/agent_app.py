@@ -8,13 +8,15 @@ from src.ga_ad_agent.agent import (
     RuleName,
     compare_two_months,
     conversion_rate_by_country_device,
+    get_all,
+    get_month,
     flagged_segments,
     run_adk_agent,
 )
 
 
 st.set_page_config(page_title="GA Agent", layout="wide")
-st.title("GA Agent (ADK + MCP)")
+st.title("GA Ad Performance Analysis Agent")  # (using Google ADK + FastMCP Server
 st.caption("Requests go through the ADK agent first, then execute via MCP tools.")
 
 # project_id = st.text_input("Billing Project ID", value=DEFAULT_PROJECT)
@@ -39,18 +41,25 @@ def _render_compare(r, dimensions):
 
 
 def _render_flagged(r):
-    df = pd.DataFrame(res.get("rows", []))
+    df = pd.DataFrame(r.get("rows", []))
     st.dataframe(df, use_container_width=True)
     st.json(r)
 
 
 def _render_conversion(r):
-    df = pd.DataFrame(res.get("rows", []))
+    df = pd.DataFrame(r.get("rows", []))
     st.dataframe(df, use_container_width=True)
     st.json(r)
 
 
-st.subheader("Ask the ADK Agent")
+def _render_kpis(r):
+    """Generic renderer for raw KPI outputs."""
+    df = pd.DataFrame(r.get("rows", []))
+    st.dataframe(df, use_container_width=True)
+    st.json(r)
+
+
+st.subheader("Ask the LLM Agent Controller")
 default_prompt = f"""
 Compare August 2016 to July 2017 by device_type and traffic_source. \n
 Identify the flagged segments by medium dimension, using traffic/ conversion rule. \n
@@ -101,13 +110,26 @@ if st.button("Run agent", type="primary"):
                         raise ValueError("conversion_rate_by_country_and_device requires month")
                     res = conversion_rate_by_country_device(month, project_id=project_id)
                     _render_conversion(res)
+                elif action == "get_monthly_data":
+                    _log_mcp_tool("get_monthly_data")
+                    month = args.get("month")
+                    dims = args.get("dimensions") or DIMENSION_KEYS
+                    if not month:
+                        raise ValueError("get_monthly_data requires month (YYYY-MM)")
+                    res = get_month(month, dims, project_id=project_id)
+                    _render_kpis(res)
+                elif action == "get_all_data":
+                    _log_mcp_tool("get_all_data")
+                    dims = args.get("dimensions") or DIMENSION_KEYS
+                    res = get_all(dims, project_id=project_id)
+                    _render_kpis(res)
                 else:
                     st.error(f"Unsupported action returned by agent: {action}")
             except Exception as exc:
                 st.error(f"Failed to execute action: {exc}")
 
 st.divider()
-st.subheader("Use Logical Controls (Agentic Tools)")
+st.subheader("Use Logical Controls (Agent Tools)")
 
 task = st.selectbox(
     "Direct tool run",
