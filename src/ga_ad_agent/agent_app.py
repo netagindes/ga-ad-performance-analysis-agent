@@ -47,8 +47,8 @@ def _render_conversion(r):
 
 st.subheader("Ask the ADK Agent")
 default_prompt = f"""
-Compare July 2017 to August 2016 by device_type and traffic_source. \n
-Identify the flagged segments by traffic/ conversion rule. \n
+Compare August 2016 to July 2017 by device_type and traffic_source. \n
+Identify the flagged segments by medium dimension, using traffic/ conversion rule. \n
 Calculate the conversion rate by country & device type for the month of 01-2017.
 """
 user_prompt = st.text_area("Describe what you want to analyze", value=default_prompt)

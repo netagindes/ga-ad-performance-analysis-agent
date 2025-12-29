@@ -9,9 +9,11 @@ from typing import Any, Dict, List, Literal, Tuple
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from google.adk.agents import Agent
+from google.adk.agents import LlmAgent
 from google.adk.runners import InMemoryRunner
 from google.adk.tools.function_tool import FunctionTool
+from google.adk.tools.mcp_tool import McpToolset
+from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 
 from src import config as cfg
 from src.constants import DEFAULT_PROJECT
@@ -81,14 +83,14 @@ async def _call_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if not SERVER_SCRIPT_PATH.exists():
         raise FileNotFoundError(f"MCP server script not found at {SERVER_SCRIPT_PATH}")
 
-    server_params = StdioServerParameters(
+    call_tool_server_params = StdioServerParameters(
         command=sys.executable,
         args=[str(SERVER_SCRIPT_PATH)],
         env=None,
     )
 
     try:
-        async with stdio_client(server_params) as (read, write):
+        async with stdio_client(call_tool_server_params) as (read, write):
             logger.debug("stdio_client started for server script=%s", SERVER_SCRIPT_PATH)
             async with ClientSession(read, write) as session:
                 logger.debug("Initializing MCP session...")
@@ -317,35 +319,102 @@ compare_months_tool = FunctionTool(_compare_months_tool)
 flagged_segments_tool = FunctionTool(_flagged_segments_tool)
 conversion_rate_by_country_device_tool = FunctionTool(_conversion_rate_by_country_device_tool)
 
+# DEFAULT_MCP_SERVER = StdioServerParameters(
+#     command="python",
+#     args=["-m", "src.ga_ad_agent.ga_mcp_server"],
+# )
+
+server_params = StdioServerParameters(
+        command=sys.executable,
+        args=[str(SERVER_SCRIPT_PATH)],
+        env=None,
+    )
+
+toolset = McpToolset(
+        connection_params=StdioConnectionParams(server_params=server_params),
+        tool_filter=["get_monthly_data", "get_all_data"],
+    )
+
 # Model selection: allow override via GEMINI_MODEL.
 # Use a v1beta-available model by default to avoid 404s on older endpoints.
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
-agent = Agent(
-    name="ad_performance_agent",
-    description="""
-    You are an Ad Performance Analysis Agent.
-    Use tools when needed.
-    Prefer deterministic results
-    """,
-    instruction="""
-    You can do exactly these actions (choose one):
-    1) compare_two_months: Compare KPIs between two months for requested dimensions and report % changes.
-    2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic|conversion), 
-       return flagged segments.
-    3) conversion_rate_by_country_and_device: For a timeframe, return conversion rate per (user_country, device_type), 
-       ordered high->low. 
-       Use a month when specified, or use "all_data" when the user asks for all history—do not force a month.
-       conversion rate = (total_conversions / total_visitors) for the given timeframe
+LLM_AGENT_DESCRIPTION = f""" Analyzes [Google Analytics Sample - Obfuscated Google Analytics 360 data](
+https://console.cloud.google.com/marketplace/product/obfuscated-ga360-data/obfuscated-ga360-data) dataset, 
+and answers user questions about it. 
+Uses: 
+    - MCP tools (get_monthly_data/get_all_data) via MCP Server
+    - deterministic function tools (compare_two_months/flagged_segments/conversion_rate_by_country_device) 
+        that implement your assignment 
+abilities. Prefer deterministic results."""
 
-    When selecting dimensions, only use these known fields:
+LLM_AGENT_INSTRUCTIONS = f"""
+You are an Ad Performance Analysis Agent, specialized in the analysis of the GA Sessions data from the BigQuery public 
+dataset GA Sample: `bigquery-public-data.google_analytics_sample.ga_sessions_*`.
+
+You MUST solve requests using tools and return results grounded in tool outputs.
+**Available abilities:**
+1) compare_two_months: Compare KPIs between two months for requested dimensions (optional)
+    - Dimensions are optional, if not provided, use all dimensions as default dimensions request - 
+        traffic_source, user_country, medium, device_type, page_title.
+    - Compute the KPIs percentage change (between the months) per KPI per segment. 
+    - Provide for each segment the percentage change between the months in each KPI.
+2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic | conversions) 
+    identify flagged segments, for all data;
+    - For the given rule name, identify the flagging rule and enforce it:
+        - traffic rule --> enforce: avg_time_on_site_seconds<120 and total_pageviews<=30
+        - conversions rule --> enforce: total_conversions=0 and total_pageviews>250
+    - Extract the given rule KPIs, per given dimension and for all data:
+        - traffic rule --> kpis: total_visitors, total_conversions
+        - conversions rule --> kpis: total_visitors, avg_time_on_site_seconds
+    - Find all flagged segments for the given rule name all over the data.
+    - Return segments that match the requested dimensions, for the given rule name.
+3) conversion_rate_by_country_and_device: Compute the conversion rate for each user country on each device 
+    on a given month per dimension, ordered from highest to lowest.
+    - For a given month and dimensions (including user_country, device_type) remove rows with zeros for total_visitors
+        and total_conversions, 
+    - Calculate the conversion rate (conversion_rate = total_conversions / total_visitors), per dimension, 
+        ordered high->low.
+    - Provide for each dimension the given month conversion rate, ordered from highest to lowest.
+
+**Notes:**
+- Always be explicit about which month(s), dimensions, and rule were used.
+- When selecting dimensions / segments, only use these known fields: 
     traffic_source, medium, device_type, user_country, page_title.
-    Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. 
-    If the user wants all history, keep the literal value "all_data".
-    Return JSON only with keys: action, arguments.
-    """,
-    model=DEFAULT_GEMINI_MODEL,  # Set GEMINI_MODEL env to override.
-    tools=[compare_months_tool, flagged_segments_tool, conversion_rate_by_country_device_tool],
+- When selecting KPIs (Key Metrics Aggregation), only use these known fields: 
+    total_visitors, total_pageviews,avg_time_on_site_seconds, total_conversions 
+- Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. 
+
+**Return JSON only with keys:** action, arguments.
+- If the user wants all history, keep the literal value "all_data".
+- If the user asks for raw KPIs for a month or all-time by dimensions, you may call MCP tools:
+    - get_monthly_data(month, dimensions)
+    - get_all_data(dimensions)
+"""
+
+agent = LlmAgent(
+    name="ad_performance_agent",
+    description=LLM_AGENT_DESCRIPTION.strip(),
+    instruction=LLM_AGENT_INSTRUCTIONS.strip(),
+    # """
+    # Use tools when needed.
+    # You can do exactly these actions (choose one):
+    # 1) compare_two_months: Compare KPIs between two months for requested dimensions and report % changes.
+    # 2) identify_flagged_segments: Given dimensions (excluding user_country) and a rule name (traffic|conversion), 
+    #    return flagged segments.
+    # 3) conversion_rate_by_country_and_device: For a timeframe, return conversion rate per (user_country, device_type), 
+    #    ordered high->low. 
+    #    Use a month when specified, or use "all_data" when the user asks for all history—do not force a month.
+    #    conversion rate = (total_conversions / total_visitors) for the given timeframe
+
+    # When selecting dimensions, only use these known fields:
+    # traffic_source, medium, device_type, user_country, page_title.
+    # Months are provided as YYYY-MM or YYYY-MM-01 depending on the user's format; preserve what the user uses. 
+    # If the user wants all history, keep the literal value "all_data".
+    # Return JSON only with keys: action, arguments.
+    # """
+    model=DEFAULT_GEMINI_MODEL,
+    tools=[compare_months_tool, flagged_segments_tool, conversion_rate_by_country_device_tool, toolset]
 )
 
 

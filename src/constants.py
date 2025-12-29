@@ -12,7 +12,7 @@ DEFAULT_PROJECT: str = cfg.GOOGLE_CLOUD_PROJECT
 DATASET: str = "bigquery-public-data.google_analytics_sample"
 TABLE_WILDCARD: str = f"{DATASET}.ga_sessions_*"
 
-# Allowlist of dimensions exposed to clients
+# Allowlist of dimensions (segments) exposed to clients
 DIMENSIONS: Dict[str, str] = {
     "traffic_source": "trafficSource.source",
     # Treat "(not set)" as NULL so downstream filters/aggregations behave as expected
@@ -25,7 +25,7 @@ DIMENSIONS: Dict[str, str] = {
 # For Streamlit UI dropdowns / type hints (keep same order everywhere)
 DIMENSION_KEYS: List[str] = list(DIMENSIONS.keys())
 
-# KPIs returned by tools
+# KPIs (Key Metrics Aggregation)
 KPI_FIELDS: List[str] = [
     "total_visitors",
     "total_pageviews",
