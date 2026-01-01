@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8502:8502"
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app/src
+      # Uncomment and set if you mount a service account key for BigQuery auth
+      # GOOGLE_APPLICATION_CREDENTIALS: /app/creds/gcp-key.json
+    # Uncomment to mount your service account JSON key into the container
+    # volumes:
+    #   - ./gcp-key.json:/app/creds/gcp-key.json:ro
+    command: streamlit run src/agent_app.py --server.port=8502 --server.address=0.0.0.0
+
